@@ -137,6 +137,8 @@ user-settings:
     #   - http://0.0.0.0:8080
     #   - ${NGINX_HOST}
     jwkFile: classpath:xxxxxxxxxxx.json
+    # HS256 短 Token，避免公网防火墙拦截超长 RS256 Header。不配则自动生成 config/jwt.secret
+    # jwt-secret: ${JWT_SECRET:}
 logging:
   config: classpath:logback-spring.xml
 

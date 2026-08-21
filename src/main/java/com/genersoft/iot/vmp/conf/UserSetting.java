@@ -192,6 +192,12 @@ public class UserSetting {
     private String jwkFile = null;
 
     /**
+     * 登录 Token 使用 HS256，长度约 120 字符，避免公网防火墙拦截超长 RS256 Header。
+     * 建议配置 32 位以上随机串；不配则首次启动自动生成并写入 config/jwt.secret
+     */
+    private String jwtSecret = null;
+
+    /**
      * wvp集群模式下如果注册向上级的wvp奔溃，则自动选择一个其他wvp继续注册到上级
      */
     private boolean autoRegisterPlatform = false;
