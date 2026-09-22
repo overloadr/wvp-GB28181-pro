@@ -81,10 +81,18 @@ public class RegisterResponseProcessor extends SIPResponseProcessorAbstract {
 		if (response.getStatusCode() == Response.UNAUTHORIZED) {
 			WWWAuthenticateHeader www = (WWWAuthenticateHeader)response.getHeader(WWWAuthenticateHeader.NAME);
 			SipTransactionInfo sipTransactionInfo = new SipTransactionInfo(response);
+			boolean isRegister = subscribe.getSipTransactionInfo().getExpires() > 0;
 			try {
-				sipCommanderForPlatform.register(platform, sipTransactionInfo, www, null, null, subscribe.getSipTransactionInfo().getExpires()  > 0);
+				// 失败回调必须传入，SIPSender 才会按 Call-ID + 新 CSeq 建订阅，200 OK 才能对上。
+				// 不要传成功回调：401 在 SIPProcessorObserver 里走成功分支，避免被误当成注册成功。
+				sipCommanderForPlatform.register(platform, sipTransactionInfo, www, eventResult -> {
+					log.info("[国标级联] {}（{}）,再次{}失败", platform.getName(), platform.getServerGBId(),
+							isRegister ? "注册" : "注销");
+					platformService.offline(platform);
+				}, null, isRegister);
 			} catch (SipException | InvalidArgumentException | ParseException e) {
 				log.error("[命令发送失败] 国标级联 再次注册: {}", e.getMessage());
+				platformService.offline(platform);
 			}
 		}else if (response.getStatusCode() == Response.OK){
 			if (subscribe.getSipTransactionInfo().getExpires()  > 0) {

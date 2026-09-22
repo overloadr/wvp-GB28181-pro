@@ -241,6 +241,8 @@ user-settings:
     use-custom-ssrc-for-parent-invite: true
     # 国标级联离线后多久重试一次注册
     register-again-after-time: 60
+    # 国标级联REGISTER等待响应超时时间（毫秒），公安平台鉴权较慢时可适当加大
+    register-timeout: 8000
     # 国标续订方式，true为续订，每次注册在同一个会话里，false为重新注册，每次使用新的会话
     register-keep-int-dialog: false
     # 开启接口文档页面。 默认开启，生产环境建议关闭，遇到swagger相关的漏洞时也可以关闭

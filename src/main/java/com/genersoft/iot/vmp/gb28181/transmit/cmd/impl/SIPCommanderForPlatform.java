@@ -128,14 +128,20 @@ public class SIPCommanderForPlatform implements ISIPCommanderForPlatform {
                 request = headerProviderPlatformProvider.createRegisterRequest(parentPlatform, fromTag, toTag, www, callIdHeader, isRegister? parentPlatform.getExpires() : 0);
             }
 
+            long timeout = userSetting.getRegisterTimeout() > 0 ? userSetting.getRegisterTimeout() : 8000L;
             sipSender.transmitRequest(parentPlatform.getDeviceIp(), request, (event)->{
                 if (event != null) {
-                    log.info("[国标级联]：{},  注册失败: {} ", parentPlatform.getServerGBId(), event.msg);
+                    if (event.type == SipSubscribe.EventResultType.timeout) {
+                        log.warn("[国标级联]：{}, REGISTER等待响应超时，timeout={}ms, msg={}",
+                                parentPlatform.getServerGBId(), timeout, event.msg);
+                    } else {
+                        log.info("[国标级联]：{},  注册失败: {} ", parentPlatform.getServerGBId(), event.msg);
+                    }
                 }
                 if (errorEvent != null ) {
                     errorEvent.response(event);
                 }
-            }, okEvent, 2000L);
+            }, okEvent, timeout);
     }
 
     @Override

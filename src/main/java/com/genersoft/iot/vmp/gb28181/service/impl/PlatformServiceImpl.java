@@ -53,7 +53,9 @@ import javax.sip.ResponseEvent;
 import javax.sip.SipException;
 import java.text.ParseException;
 import java.util.List;
+import java.util.Set;
 import java.util.Vector;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -114,6 +116,11 @@ public class PlatformServiceImpl implements IPlatformService {
     @Autowired
     private PlatformStatusTaskRunner statusTaskRunner;
 
+    /**
+     * 正在向上级发起 REGISTER 的平台，避免丢失检测并行开新会话
+     */
+    private final Set<String> registeringPlatforms = ConcurrentHashMap.newKeySet();
+
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady(){
 
@@ -172,6 +179,10 @@ public class PlatformServiceImpl implements IPlatformService {
             return;
         }
         for (Platform platform : platformList) {
+             if (registeringPlatforms.contains(platform.getServerGBId())) {
+                 log.debug("[国标级联] {} 正在注册，跳过丢失检测", platform.getServerGBId());
+                 continue;
+             }
              if (statusTaskRunner.containsRegister(platform.getServerGBId()) && statusTaskRunner.containsKeepAlive(platform.getServerGBId())) {
                  continue;
              }
@@ -187,12 +198,18 @@ public class PlatformServiceImpl implements IPlatformService {
     }
 
     private void sendRegister(Platform platform, SipTransactionInfo sipTransactionInfo) {
+        String platformId = platform.getServerGBId();
+        if (!registeringPlatforms.add(platformId)) {
+            log.info("[国标级联] {}（{}）正在注册，忽略重复发起", platform.getName(), platformId);
+            return;
+        }
         try {
             commanderForPlatform.register(platform, sipTransactionInfo, eventResult -> {
-                log.info("[国标级联] {}（{}）,注册失败", platform.getName(), platform.getServerGBId());
+                log.info("[国标级联] {}（{}）,注册失败", platform.getName(), platformId);
                 offline(platform);
             }, null);
         } catch (InvalidArgumentException | ParseException | SipException e) {
+            registeringPlatforms.remove(platformId);
             log.error("[命令发送失败] 国标级联: {}", e.getMessage());
         }
     }
@@ -410,6 +427,7 @@ public class PlatformServiceImpl implements IPlatformService {
 
     @Override
     public void online(Platform platform, SipTransactionInfo sipTransactionInfo) {
+        registeringPlatforms.remove(platform.getServerGBId());
         log.info("[国标级联]：{}, 平台上线", platform.getServerGBId());
         PlatformRegisterTask registerTask = new PlatformRegisterTask(platform.getServerGBId(), platform.getExpires() * 1000L - 500L,
                 sipTransactionInfo, (platformServerGbId) -> {
@@ -502,6 +520,7 @@ public class PlatformServiceImpl implements IPlatformService {
 
     @Override
     public void offline(Platform platform) {
+        registeringPlatforms.remove(platform.getServerGBId());
         log.info("[平台离线]：{}({})", platform.getName(), platform.getServerGBId());
         statusTaskRunner.removeRegisterTask(platform.getServerGBId());
         statusTaskRunner.removeKeepAliveTask(platform.getServerGBId());

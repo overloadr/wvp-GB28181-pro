@@ -119,6 +119,11 @@ public class UserSetting {
     private Boolean refuseChannelStatusChannelFormNotify = Boolean.FALSE;
 
     /**
+     * 设备目录订阅周期（秒）。页面勾选「目录」时使用该值，默认 3600。过短会导致下级反复推送 Catalog，上级通道状态抖动
+     */
+    private int subscribeCycleForCatalog = 3600;
+
+    /**
      * 设备/通道状态变化时发送消息
      */
     private Boolean deviceStatusNotify = Boolean.TRUE;
@@ -168,6 +173,11 @@ public class UserSetting {
      * 国标级联离线后多久重试一次注册
      */
     private int registerAgainAfterTime = 60;
+
+    /**
+     * 国标级联 REGISTER 等待响应超时时间（毫秒）。公安平台鉴权较慢时可适当加大
+     */
+    private long registerTimeout = 8000;
 
     /**
      * 国标续订方式，true为续订，每次注册在同一个会话里，false为重新注册，每次使用新的会话
