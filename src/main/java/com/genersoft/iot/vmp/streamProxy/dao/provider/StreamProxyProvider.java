@@ -57,4 +57,11 @@ public class StreamProxyProvider {
         sqlBuild.append(" order by st.create_time desc");
         return sqlBuild.toString();
     }
+
+    public String selectEnabledByServerId(Map<String, Object> params) {
+        return getBaseSelectSql() +
+                " WHERE st.enable=1" +
+                " AND (st.server_id = #{serverId} OR st.server_id IS NULL OR st.server_id = '')" +
+                " order by st.create_time desc";
+    }
 }

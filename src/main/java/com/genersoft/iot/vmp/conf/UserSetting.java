@@ -74,6 +74,12 @@ public class UserSetting {
     private Boolean usePushingAsStatus = Boolean.FALSE;
 
     /**
+     * 定时检测尚未拉流的代理间隔（秒）。源地址恢复有流时自动拉起，并同步国标通道在线、通知上级。
+     * 0 表示关闭，默认 30
+     */
+    private int streamProxyIdleCheckInterval = 30;
+
+    /**
      * 使用来源请求ip作为streamIp,当且仅当你只有zlm节点它与wvp在一起的情况下开启
      */
     private Boolean useSourceIpAsStreamIp = Boolean.FALSE;

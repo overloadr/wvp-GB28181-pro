@@ -17,6 +17,7 @@ import com.genersoft.iot.vmp.media.event.mediaServer.MediaServerOnlineEvent;
 import com.genersoft.iot.vmp.media.service.IMediaServerService;
 import com.genersoft.iot.vmp.media.zlm.dto.hook.OriginType;
 import com.genersoft.iot.vmp.service.bean.ErrorCallback;
+import com.genersoft.iot.vmp.service.bean.InviteErrorCode;
 import com.genersoft.iot.vmp.storager.IRedisCatchStorage;
 import com.genersoft.iot.vmp.streamProxy.bean.StreamProxy;
 import com.genersoft.iot.vmp.streamProxy.dao.StreamProxyMapper;
@@ -32,6 +33,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +44,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 视频代理业务
@@ -73,6 +79,12 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
 
     @Autowired
     TransactionDefinition transactionDefinition;
+
+    private final AtomicBoolean idleCheckRunning = new AtomicBoolean(false);
+
+    private final Set<Integer> idleCheckInProgress = ConcurrentHashMap.newKeySet();
+
+    private volatile long lastIdleCheckTime = 0;
 
     /**
      * 流到来的处理
@@ -360,7 +372,6 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
 
     @Transactional
     public void streamChangeHandler(String app, String stream, String mediaServerId, boolean status) {
-        // 状态变化时推送到国标上级
         StreamProxy streamProxy = streamProxyMapper.selectOneByAppAndStream(app, stream);
         if (streamProxy == null) {
             return;
@@ -369,6 +380,167 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
         streamProxy.setMediaServerId(mediaServerId);
         streamProxy.setUpdateTime(DateUtil.getNow());
         streamProxyMapper.updateStream(streamProxy);
+        syncGbChannelByPulling(streamProxy, status);
+    }
+
+    /**
+     * 拉流状态变化时同步绑定的国标通道，online/offline 会发 Catalog ON/OFF 给已订阅的上级。
+     */
+    private void syncGbChannelByPulling(StreamProxy streamProxy, boolean pulling) {
+        if (streamProxy.getGbId() <= 0) {
+            return;
+        }
+        CommonGBChannel channel = streamProxy.buildCommonGBChannel();
+        if (channel == null) {
+            return;
+        }
+        boolean gbOnline = "ON".equalsIgnoreCase(streamProxy.getGbStatus());
+        if (pulling && !gbOnline) {
+            log.info("[拉流代理] 通道上线 {}/{} -> {}", streamProxy.getApp(), streamProxy.getStream(), streamProxy.getGbDeviceId());
+            gbChannelService.online(channel);
+        } else if (!pulling && gbOnline) {
+            log.info("[拉流代理] 通道离线 {}/{} -> {}", streamProxy.getApp(), streamProxy.getStream(), streamProxy.getGbDeviceId());
+            gbChannelService.offline(channel);
+        }
+    }
+
+    @Scheduled(fixedDelay = 10, initialDelay = 45, timeUnit = TimeUnit.SECONDS)
+    public void scheduledCheckIdleStreamProxies() {
+        int interval = userSetting.getStreamProxyIdleCheckInterval();
+        if (interval <= 0) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastIdleCheckTime < interval * 1000L) {
+            return;
+        }
+        if (!idleCheckRunning.compareAndSet(false, true)) {
+            return;
+        }
+        lastIdleCheckTime = now;
+        try {
+            checkIdleStreamProxies();
+        } finally {
+            idleCheckRunning.set(false);
+        }
+    }
+
+    @Override
+    public void checkIdleStreamProxies() {
+        List<StreamProxy> proxies = streamProxyMapper.selectEnabledByServerId(userSetting.getServerId());
+        if (proxies == null || proxies.isEmpty()) {
+            return;
+        }
+        List<MediaServer> onlineServers = mediaServerService.getAllOnline();
+        if (onlineServers == null || onlineServers.isEmpty()) {
+            return;
+        }
+        for (StreamProxy streamProxy : proxies) {
+            try {
+                handleIdleStreamProxy(streamProxy, onlineServers);
+            } catch (Exception e) {
+                log.warn("[拉流代理-空闲检测] 处理失败 {}/{}: {}", streamProxy.getApp(), streamProxy.getStream(), e.getMessage());
+            }
+        }
+    }
+
+    private void handleIdleStreamProxy(StreamProxy streamProxy, List<MediaServer> onlineServers) {
+        boolean pulling = Boolean.TRUE.equals(streamProxy.getPulling());
+        String readyMediaServerId = findReadyMediaServerId(streamProxy, onlineServers);
+        boolean gbOnline = streamProxy.getGbId() > 0 && "ON".equalsIgnoreCase(streamProxy.getGbStatus());
+
+        // 已在拉流的代理不由定时任务停流/下线/重拉，避免查询抖动误伤正在共享的通道
+        if (pulling) {
+            if (readyMediaServerId != null && !gbOnline && streamProxy.getGbId() > 0) {
+                log.info("[拉流代理-空闲检测] 正在拉流但通道未在线，补发上线 {}/{}", streamProxy.getApp(), streamProxy.getStream());
+                streamChangeHandler(streamProxy.getApp(), streamProxy.getStream(), readyMediaServerId, true);
+            }
+            return;
+        }
+
+        if (readyMediaServerId != null) {
+            log.info("[拉流代理-空闲检测] 尚未拉流但媒体节点已有流，同步状态 {}/{}", streamProxy.getApp(), streamProxy.getStream());
+            streamChangeHandler(streamProxy.getApp(), streamProxy.getStream(), readyMediaServerId, true);
+            return;
+        }
+        if (streamProxy.isEnableDisableNoneReader()) {
+            return;
+        }
+        retryStartIdleProxy(streamProxy);
+    }
+
+    private void retryStartIdleProxy(StreamProxy streamProxy) {
+        int proxyId = streamProxy.getId();
+        if (!idleCheckInProgress.add(proxyId)) {
+            return;
+        }
+        StreamProxy toStart = streamProxy;
+        if (!ObjectUtils.isEmpty(streamProxy.getStreamKey()) || !ObjectUtils.isEmpty(streamProxy.getMediaServerId())) {
+            try {
+                playService.stopProxy(streamProxy);
+            } catch (Exception e) {
+                log.debug("[拉流代理-空闲检测] 清理旧代理失败 {}/{}: {}", streamProxy.getApp(), streamProxy.getStream(), e.getMessage());
+            }
+            toStart = streamProxyMapper.select(proxyId);
+            if (toStart == null || !toStart.isEnable()) {
+                idleCheckInProgress.remove(proxyId);
+                return;
+            }
+        }
+        final StreamProxy target = toStart;
+        log.info("[拉流代理-空闲检测] 尝试拉流 {}/{}，源：{}", target.getApp(), target.getStream(), target.getSrcUrl());
+        try {
+            playService.startProxy(target, (code, msg, data) -> {
+                idleCheckInProgress.remove(proxyId);
+                if (code == ErrorCode.SUCCESS.getCode() || code == InviteErrorCode.SUCCESS.getCode()) {
+                    log.info("[拉流代理-空闲检测] 拉流成功 {}/{}", target.getApp(), target.getStream());
+                    String mediaServerId = target.getMediaServerId();
+                    if (data != null && data.getMediaServer() != null) {
+                        mediaServerId = data.getMediaServer().getId();
+                    }
+                    streamChangeHandler(target.getApp(), target.getStream(), mediaServerId, true);
+                } else {
+                    log.info("[拉流代理-空闲检测] 源暂无流 {}/{}: {}", target.getApp(), target.getStream(), msg);
+                }
+            });
+        } catch (Exception e) {
+            idleCheckInProgress.remove(proxyId);
+            log.info("[拉流代理-空闲检测] 启动失败 {}/{}: {}", target.getApp(), target.getStream(), e.getMessage());
+        }
+    }
+
+    private String findReadyMediaServerId(StreamProxy streamProxy, List<MediaServer> onlineServers) {
+        List<MediaServer> candidates = new ArrayList<>();
+        addMediaServerIfPresent(candidates, streamProxy.getMediaServerId());
+        addMediaServerIfPresent(candidates, streamProxy.getRelatesMediaServerId());
+        if (candidates.isEmpty()) {
+            candidates.addAll(onlineServers);
+        }
+        for (MediaServer mediaServer : candidates) {
+            try {
+                if (Boolean.TRUE.equals(mediaServerService.isStreamReady(mediaServer, streamProxy.getApp(), streamProxy.getStream()))) {
+                    return mediaServer.getId();
+                }
+            } catch (Exception e) {
+                log.debug("[拉流代理-空闲检测] 查询流失败 {} {}/{}: {}", mediaServer.getId(), streamProxy.getApp(), streamProxy.getStream(), e.getMessage());
+            }
+        }
+        return null;
+    }
+
+    private void addMediaServerIfPresent(List<MediaServer> candidates, String mediaServerId) {
+        if (ObjectUtils.isEmpty(mediaServerId)) {
+            return;
+        }
+        for (MediaServer exist : candidates) {
+            if (mediaServerId.equals(exist.getId())) {
+                return;
+            }
+        }
+        MediaServer mediaServer = mediaServerService.getOne(mediaServerId);
+        if (mediaServer != null) {
+            candidates.add(mediaServer);
+        }
     }
 
     @Override

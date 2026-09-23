@@ -49,6 +49,9 @@ public interface StreamProxyMapper {
     @SelectProvider(type = StreamProxyProvider.class, method = "selectForPushingInMediaServer")
     List<StreamProxy> selectForPushingInMediaServer(@Param("mediaServerId")  String mediaServerId, @Param("enable") boolean enable);
 
+    @SelectProvider(type = StreamProxyProvider.class, method = "selectEnabledByServerId")
+    List<StreamProxy> selectEnabledByServerId(@Param("serverId") String serverId);
+
 
     @Select("select count(1) from wvp_stream_proxy")
     int getAllCount();

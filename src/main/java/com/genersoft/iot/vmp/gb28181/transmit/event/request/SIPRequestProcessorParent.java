@@ -175,7 +175,7 @@ public abstract class SIPRequestProcessorParent {
 	public SIPResponse responseXmlAck(SIPRequest request, String xml, Platform platform, Integer expires) throws SipException, InvalidArgumentException, ParseException {
 		ContentTypeHeader contentTypeHeader = SipFactory.getInstance().createHeaderFactory().createContentTypeHeader("Application", "MANSCDP+xml");
 
-		// 订阅 2xx 的 Contact 指向本级（被订阅方），供上级后续 SUBSCRIBE/NOTIFY 使用
+		// Contact 指向本级（被订阅方），与 NOTIFY 中 Contact 一致
 		SipURI sipURI = SipFactory.getInstance().createAddressFactory().createSipURI(platform.getDeviceGBId(),
 				IpPortUtil.concatenateIpAndPort(platform.getDeviceIp(), String.valueOf(platform.getDevicePort())));
 		ResponseAckExtraParam responseAckExtraParam = new ResponseAckExtraParam();

@@ -9,6 +9,7 @@ import com.genersoft.iot.vmp.gb28181.transmit.cmd.impl.SIPCommanderForPlatform;
 import com.genersoft.iot.vmp.gb28181.transmit.event.request.SIPRequestProcessorParent;
 import com.genersoft.iot.vmp.gb28181.transmit.event.request.impl.message.IMessageHandler;
 import com.genersoft.iot.vmp.gb28181.transmit.event.request.impl.message.query.QueryMessageHandler;
+import com.genersoft.iot.vmp.gb28181.utils.XmlUtil;
 import gov.nist.javax.sip.message.SIPRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.dom4j.Element;
@@ -69,14 +70,18 @@ public class CatalogQueryMessageHandler extends SIPRequestProcessorParent implem
         }
         Element snElement = rootElement.element("SN");
         String sn = snElement.getText();
+        String deviceId = XmlUtil.getText(rootElement, "DeviceID");
+        if (deviceId == null || deviceId.isEmpty()) {
+            deviceId = platform.getDeviceGBId();
+        }
         List<CommonGBChannel> channelList = platformChannelService.queryByPlatform(platform);
 
         try {
             if (!channelList.isEmpty()) {
-                cmderFroPlatform.catalogQuery(channelList, platform, sn, fromHeader.getTag());
+                cmderFroPlatform.catalogQuery(channelList, platform, sn, fromHeader.getTag(), deviceId);
             }else {
                 // 回复无通道
-                cmderFroPlatform.catalogQuery(Collections.emptyList(), platform, sn, fromHeader.getTag());
+                cmderFroPlatform.catalogQuery(Collections.emptyList(), platform, sn, fromHeader.getTag(), deviceId);
             }
         } catch (SipException | InvalidArgumentException | ParseException e) {
             log.error("[命令发送失败] 国标级联 目录查询回复: {}", e.getMessage());

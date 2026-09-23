@@ -92,4 +92,14 @@ class StreamProxyProviderTest {
         assertTrue(sql.contains("FROM wvp_stream_proxy"), "should have FROM");
         assertTrue(sql.contains("LEFT join wvp_device_channel"), "should have LEFT JOIN");
     }
+
+    @Test
+    void selectEnabledByServerId_shouldUseBindVariable() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("serverId", "000000");
+        String sql = provider.selectEnabledByServerId(params);
+        assertTrue(sql.contains("#{serverId}"), "should use #{serverId} bind variable");
+        assertFalse(sql.contains("000000"), "should not contain raw server id");
+        assertTrue(sql.contains("st.enable=1"), "should filter enabled proxies");
+    }
 }

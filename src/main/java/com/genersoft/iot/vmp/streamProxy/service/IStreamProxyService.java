@@ -87,4 +87,10 @@ public interface IStreamProxyService {
 
     void delete(int id);
 
+    /**
+     * 检测尚未拉流的代理：媒体节点已有流则同步状态；持续拉流的代理则尝试重新拉起。
+     * 拉流成功后更新绑定国标通道为在线并通知上级。
+     */
+    void checkIdleStreamProxies();
+
 }

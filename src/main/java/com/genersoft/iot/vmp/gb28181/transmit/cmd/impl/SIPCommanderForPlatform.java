@@ -186,7 +186,7 @@ public class SIPCommanderForPlatform implements ISIPCommanderForPlatform {
         if (channel != null) {
             channels.add(channel);
         }
-        String catalogXml = getCatalogXml(channels, sn, parentPlatform, size);
+        String catalogXml = getCatalogXml(channels, sn, parentPlatform, size, parentPlatform.getDeviceGBId());
 
         // callid
         CallIdHeader callIdHeader = sipSender.getNewCallIdHeader(parentPlatform.getDeviceIp(),parentPlatform.getTransport());
@@ -198,19 +198,25 @@ public class SIPCommanderForPlatform implements ISIPCommanderForPlatform {
 
     @Override
     public void catalogQuery(List<CommonGBChannel> channels, Platform parentPlatform, String sn, String fromTag) throws InvalidArgumentException, ParseException, SipException {
+        catalogQuery(channels, parentPlatform, sn, fromTag, parentPlatform == null ? null : parentPlatform.getDeviceGBId());
+    }
+
+    @Override
+    public void catalogQuery(List<CommonGBChannel> channels, Platform parentPlatform, String sn, String fromTag, String deviceId) throws InvalidArgumentException, ParseException, SipException {
         if ( parentPlatform ==null) {
             return ;
         }
-        sendCatalogResponse(channels, parentPlatform, sn, fromTag, 0, true);
+        sendCatalogResponse(channels, parentPlatform, sn, fromTag, 0, true, deviceId);
     }
-    private String getCatalogXml(List<CommonGBChannel> channels, String sn, Platform platform, int size) {
+    private String getCatalogXml(List<CommonGBChannel> channels, String sn, Platform platform, int size, String deviceId) {
         String characterSet = platform.getCharacterSet();
+        String responseDeviceId = ObjectUtils.isEmpty(deviceId) ? platform.getDeviceGBId() : deviceId;
         StringBuffer catalogXml = new StringBuffer(600);
         catalogXml.append("<?xml version=\"1.0\" encoding=\"" + characterSet +"\"?>\r\n")
                 .append("<Response>\r\n")
                 .append("<CmdType>Catalog</CmdType>\r\n")
                 .append("<SN>" +sn + "</SN>\r\n")
-                .append("<DeviceID>" + platform.getDeviceGBId() + "</DeviceID>\r\n")
+                .append("<DeviceID>" + responseDeviceId + "</DeviceID>\r\n")
                 .append("<SumNum>" + size + "</SumNum>\r\n")
                 .append("<DeviceList Num=\"" + channels.size() +"\">\r\n");
         if (!channels.isEmpty()) {
@@ -224,13 +230,14 @@ public class SIPCommanderForPlatform implements ISIPCommanderForPlatform {
         return catalogXml.toString();
     }
 
-    private void sendCatalogResponse(List<CommonGBChannel> channels, Platform parentPlatform, String sn, String fromTag, int index, boolean sendAfterResponse) throws SipException, InvalidArgumentException, ParseException {
-        if (index > channels.size()) {
+    private void sendCatalogResponse(List<CommonGBChannel> channels, Platform parentPlatform, String sn, String fromTag, int index, boolean sendAfterResponse, String deviceId) throws SipException, InvalidArgumentException, ParseException {
+        // 已发完则停止。原先用 index > size，最后一条成功后还会再发一条空目录，科达会回 404
+        if (index >= channels.size() && !(channels.isEmpty() && index == 0)) {
             return;
         }
         String catalogXml;
         if (channels.isEmpty()) {
-            catalogXml = getCatalogXml(Collections.emptyList(), sn, parentPlatform, 0);
+            catalogXml = getCatalogXml(Collections.emptyList(), sn, parentPlatform, 0, deviceId);
         }else {
             List<CommonGBChannel> subChannelList;
             if (index + parentPlatform.getCatalogGroup() < channels.size()) {
@@ -238,7 +245,7 @@ public class SIPCommanderForPlatform implements ISIPCommanderForPlatform {
             }else {
                 subChannelList = channels.subList(index, channels.size());
             }
-            catalogXml = getCatalogXml(subChannelList, sn, parentPlatform, channels.size());
+            catalogXml = getCatalogXml(subChannelList, sn, parentPlatform, channels.size(), deviceId);
         }
         // callid
         CallIdHeader callIdHeader = sipSender.getNewCallIdHeader(parentPlatform.getDeviceIp(),parentPlatform.getTransport());
@@ -259,7 +266,7 @@ public class SIPCommanderForPlatform implements ISIPCommanderForPlatform {
                     // 消息发送超时, 以30毫秒的间隔直接发送
                     int indexNext = index + parentPlatform.getCatalogGroup();
                     try {
-                        sendCatalogResponse(channels, parentPlatform, sn, fromTag, indexNext, false);
+                        sendCatalogResponse(channels, parentPlatform, sn, fromTag, indexNext, false, deviceId);
                     } catch (SipException | InvalidArgumentException | ParseException e) {
                         log.error("[命令发送失败] 国标级联 目录查询回复: {}", e.getMessage());
                     }
@@ -271,7 +278,7 @@ public class SIPCommanderForPlatform implements ISIPCommanderForPlatform {
                 dynamicTask.stop(timeoutTaskKey);
                 int indexNext = index + parentPlatform.getCatalogGroup();
                 try {
-                    sendCatalogResponse(channels, parentPlatform, sn, fromTag, indexNext, true);
+                    sendCatalogResponse(channels, parentPlatform, sn, fromTag, indexNext, true, deviceId);
                 } catch (SipException | InvalidArgumentException | ParseException e) {
                     log.error("[命令发送失败] 国标级联 目录查询回复: {}", e.getMessage());
                 }
@@ -283,7 +290,7 @@ public class SIPCommanderForPlatform implements ISIPCommanderForPlatform {
             dynamicTask.startDelay(timeoutTaskKey, ()->{
                 int indexNext = index + parentPlatform.getCatalogGroup();
                 try {
-                    sendCatalogResponse(channels, parentPlatform, sn, fromTag, indexNext, false);
+                    sendCatalogResponse(channels, parentPlatform, sn, fromTag, indexNext, false, deviceId);
                 } catch (SipException | InvalidArgumentException | ParseException e) {
                     log.error("[命令发送失败] 国标级联 目录查询回复: {}", e.getMessage());
                 }
