@@ -263,14 +263,14 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
         }
         Map<String, StreamProxy> streamProxyMapForDb = new HashMap<>();
         for (StreamProxy streamProxy : streamProxies) {
-            streamProxyMapForDb.put(streamProxy.getApp() + "_" + streamProxy.getStream(), streamProxy);
+            streamProxyMapForDb.put(buildAppStreamKey(streamProxy.getApp(), streamProxy.getStream()), streamProxy);
         }
 
         List<StreamInfo> streamInfoList = mediaServerService.getMediaList(mediaServer, null, null, null);
 
         List<CommonGBChannel> channelListForOnline = new ArrayList<>();
         for (StreamInfo streamInfo : streamInfoList) {
-            String key = streamInfo.getApp() + streamInfo.getStream();
+            String key = buildAppStreamKey(streamInfo.getApp(), streamInfo.getStream());
             StreamProxy streamProxy = streamProxyMapForDb.get(key);
             if (streamProxy == null) {
                 // 流媒体存在，数据库中不存在
@@ -352,6 +352,10 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
                 redisCatchStorage.sendStreamChangeMsg("pull", jsonObject);
             }
         }
+    }
+
+    private String buildAppStreamKey(String app, String stream) {
+        return app + "_" + stream;
     }
 
     @Transactional

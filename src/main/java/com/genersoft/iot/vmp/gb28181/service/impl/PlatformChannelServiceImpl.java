@@ -149,6 +149,9 @@ public class PlatformChannelServiceImpl implements IPlatformChannelService {
                         }
                     }
                 }
+                if (event.getMessageType() == ChannelEvent.ChannelEventMessageType.UPDATE) {
+                    notifyParentIfStatusChanged(event, platformMap);
+                }
                 break;
             default:
                 break;
@@ -212,6 +215,89 @@ public class PlatformChannelServiceImpl implements IPlatformChannelService {
         }
     }
 
+    /**
+     * 通道更新走的是 Catalog UPDATE。部分上级只认 Event=ON/OFF 作为在线状态变更，
+     * 因此在 gb_status 实际变化时补发对应的 Catalog 通知。
+     */
+    private void notifyParentIfStatusChanged(ChannelEvent event, Map<String, List<Platform>> platformMap) {
+        if (event.getOldChannels() == null || event.getOldChannels().isEmpty()
+                || event.getChannels() == null || event.getChannels().isEmpty()) {
+            return;
+        }
+        Map<Integer, CommonGBChannel> oldByGbId = new HashMap<>();
+        Map<String, CommonGBChannel> oldByDeviceId = new HashMap<>();
+        for (CommonGBChannel oldChannel : event.getOldChannels()) {
+            if (oldChannel == null) {
+                continue;
+            }
+            if (oldChannel.getGbId() > 0) {
+                oldByGbId.put(oldChannel.getGbId(), oldChannel);
+            }
+            if (oldChannel.getGbDeviceId() != null) {
+                oldByDeviceId.put(oldChannel.getGbDeviceId(), oldChannel);
+            }
+        }
+        List<CommonGBChannel> onlineChannels = new ArrayList<>();
+        List<CommonGBChannel> offlineChannels = new ArrayList<>();
+        for (CommonGBChannel newChannel : event.getChannels()) {
+            if (newChannel == null) {
+                continue;
+            }
+            CommonGBChannel oldChannel = newChannel.getGbId() > 0 ? oldByGbId.get(newChannel.getGbId()) : null;
+            if (oldChannel == null && newChannel.getGbDeviceId() != null) {
+                oldChannel = oldByDeviceId.get(newChannel.getGbDeviceId());
+            }
+            if (oldChannel == null) {
+                continue;
+            }
+            String oldStatus = oldChannel.getGbStatus();
+            String newStatus = newChannel.getGbStatus();
+            if (isOnline(newStatus) && !isOnline(oldStatus)) {
+                onlineChannels.add(newChannel);
+            } else if (isOffline(newStatus) && isOnline(oldStatus)) {
+                offlineChannels.add(newChannel);
+            }
+        }
+        sendCatalogStatusNotify(CatalogEvent.ON, onlineChannels, platformMap);
+        sendCatalogStatusNotify(CatalogEvent.OFF, offlineChannels, platformMap);
+    }
+
+    private boolean isOnline(String status) {
+        return "ON".equalsIgnoreCase(status);
+    }
+
+    private boolean isOffline(String status) {
+        return status == null || status.isEmpty() || "OFF".equalsIgnoreCase(status);
+    }
+
+    private void sendCatalogStatusNotify(String type, List<CommonGBChannel> channels, Map<String, List<Platform>> platformMap) {
+        if (channels == null || channels.isEmpty() || platformMap == null || platformMap.isEmpty()) {
+            return;
+        }
+        for (CommonGBChannel channel : channels) {
+            List<Platform> platformList = platformMap.get(channel.getGbDeviceId());
+            if (platformList == null || platformList.isEmpty()) {
+                continue;
+            }
+            for (Platform platform : platformList) {
+                SubscribeInfo subscribeInfo = subscribeHolder.getCatalogSubscribe(platform.getServerGBId());
+                if (subscribeInfo == null) {
+                    continue;
+                }
+                log.info("[Catalog事件: {}]平台：{}，通道状态变化，影响通道{}", type, platform.getServerGBId(), channel.getGbDeviceId());
+                List<CommonGBChannel> deviceChannelList = new ArrayList<>();
+                CommonGBChannel notifyChannel = new CommonGBChannel();
+                notifyChannel.setGbDeviceId(channel.getGbDeviceId());
+                deviceChannelList.add(notifyChannel);
+                try {
+                    sipCommanderForPlatform.sendNotifyForCatalogOther(type, platform, deviceChannelList, subscribeInfo, null);
+                } catch (InvalidArgumentException | ParseException | NoSuchFieldException | SipException |
+                         IllegalAccessException e) {
+                    log.error("[命令发送失败] 国标级联 Catalog通知: {}", e.getMessage());
+                }
+            }
+        }
+    }
 
     @Override
     public PageInfo<PlatformChannel> queryChannelList(int page, int count, String query, Integer channelType, Boolean online, Integer platformId, Boolean hasShare) {

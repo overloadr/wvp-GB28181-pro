@@ -105,8 +105,9 @@ public abstract class SIPRequestProcessorParent {
 		}
 
 		if (responseAckExtraParam != null) {
-			if (responseAckExtraParam.sipURI != null && sipRequest.getMethod().equals(Request.INVITE)) {
-				log.debug("responseSdpAck SipURI: {}:{}", responseAckExtraParam.sipURI.getHost(), responseAckExtraParam.sipURI.getPort());
+			if (responseAckExtraParam.sipURI != null && (sipRequest.getMethod().equals(Request.INVITE)
+					|| sipRequest.getMethod().equals(Request.SUBSCRIBE))) {
+				log.debug("responseAck Contact SipURI: {}:{}", responseAckExtraParam.sipURI.getHost(), responseAckExtraParam.sipURI.getPort());
 				Address concatAddress = SipFactory.getInstance().createAddressFactory().createAddress(
 						SipFactory.getInstance().createAddressFactory().createSipURI(responseAckExtraParam.sipURI.getUser(), IpPortUtil.concatenateIpAndPort(responseAckExtraParam.sipURI.getHost(), String.valueOf(responseAckExtraParam.sipURI.getPort()))
 						));
@@ -161,16 +162,22 @@ public abstract class SIPRequestProcessorParent {
 		return sipResponse;
 	}
 
+	protected void addSubscribeContactHeader(Response response, Platform platform) throws PeerUnavailableException, ParseException {
+		String sipAddress = IpPortUtil.concatenateIpAndPort(platform.getDeviceIp(), String.valueOf(platform.getDevicePort()));
+		Address concatAddress = SipFactory.getInstance().createAddressFactory().createAddress(
+				SipFactory.getInstance().createAddressFactory().createSipURI(platform.getDeviceGBId(), sipAddress));
+		response.addHeader(SipFactory.getInstance().createHeaderFactory().createContactHeader(concatAddress));
+	}
+
 	/**
 	 * 回复带xml的200
 	 */
 	public SIPResponse responseXmlAck(SIPRequest request, String xml, Platform platform, Integer expires) throws SipException, InvalidArgumentException, ParseException {
 		ContentTypeHeader contentTypeHeader = SipFactory.getInstance().createHeaderFactory().createContentTypeHeader("Application", "MANSCDP+xml");
 
-		SipURI sipURI = (SipURI)request.getRequestURI();
-		if (sipURI.getPort() == -1) {
-			sipURI = SipFactory.getInstance().createAddressFactory().createSipURI(platform.getServerGBId(), IpPortUtil.concatenateIpAndPort(platform.getServerIp(), String.valueOf(platform.getServerPort())));
-		}
+		// 订阅 2xx 的 Contact 指向本级（被订阅方），供上级后续 SUBSCRIBE/NOTIFY 使用
+		SipURI sipURI = SipFactory.getInstance().createAddressFactory().createSipURI(platform.getDeviceGBId(),
+				IpPortUtil.concatenateIpAndPort(platform.getDeviceIp(), String.valueOf(platform.getDevicePort())));
 		ResponseAckExtraParam responseAckExtraParam = new ResponseAckExtraParam();
 		responseAckExtraParam.contentTypeHeader = contentTypeHeader;
 		responseAckExtraParam.content = xml;
