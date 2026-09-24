@@ -45,6 +45,14 @@ public class UserApiKeyServiceImpl implements IUserApiKeyService {
         return userApiKeyMapper.selectById(id);
     }
 
+    @Override
+    public UserApiKey getUserApiKeyByApiKey(String apiKey) {
+        if (apiKey == null || apiKey.isBlank()) {
+            return null;
+        }
+        return userApiKeyMapper.selectByApiKey(apiKey);
+    }
+
     @CacheEvict(cacheNames = "userApiKey", key = "#id")
     @Override
     public int enable(Integer id) {

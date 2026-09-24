@@ -20,6 +20,8 @@ public interface IUserApiKeyService {
 
     UserApiKey getUserApiKeyById(Integer id);
 
+    UserApiKey getUserApiKeyByApiKey(String apiKey);
+
     int reset(Integer id, String apiKey);
 
 }

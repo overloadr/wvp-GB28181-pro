@@ -201,14 +201,65 @@ public class JwtUtils implements InitializingBean {
         } catch (InvalidJwtException e) {
             if (e.hasErrorCode(ErrorCodes.EXPIRED)) {
                 jwtUser.setStatus(JwtUser.TokenStatus.EXPIRED);
-            } else {
-                jwtUser.setStatus(JwtUser.TokenStatus.EXCEPTION);
+                return jwtUser;
             }
+            JwtUser stored = verifyStoredApiKey(token);
+            if (stored != null) {
+                return stored;
+            }
+            jwtUser.setStatus(JwtUser.TokenStatus.EXCEPTION);
             return jwtUser;
         } catch (Exception e) {
+            JwtUser stored = verifyStoredApiKey(token);
+            if (stored != null) {
+                return stored;
+            }
             log.error("[Token解析失败]： {}", e.getMessage());
             jwtUser.setStatus(JwtUser.TokenStatus.EXPIRED);
             return jwtUser;
         }
+    }
+
+    /**
+     * 登录 Token 已改为 HS256。库里已配置的 apiKey 仍是旧 RS256 签发的，验签会失败。
+     * 请求头里的值与 wvp_user_api_key.api_key 一致且已启用、未过期时，按该记录放行。
+     */
+    private static JwtUser verifyStoredApiKey(String token) {
+        if (userApiKeyService == null || userService == null || token == null || token.isBlank()) {
+            return null;
+        }
+        UserApiKey userApiKey;
+        try {
+            userApiKey = userApiKeyService.getUserApiKeyByApiKey(token);
+        } catch (Exception e) {
+            log.error("[API KEY] 查询已配置 ApiKey 失败： {}", e.getMessage());
+            return null;
+        }
+        if (userApiKey == null) {
+            return null;
+        }
+        JwtUser jwtUser = new JwtUser();
+        if (!userApiKey.isEnable() || (userApiKey.getExpiredAt() > 0 && userApiKey.getExpiredAt() < System.currentTimeMillis())) {
+            jwtUser.setStatus(JwtUser.TokenStatus.EXPIRED);
+            return jwtUser;
+        }
+        User user = null;
+        if (userApiKey.getUsername() != null && !userApiKey.getUsername().isBlank()) {
+            user = userService.getUserByUsername(userApiKey.getUsername());
+        }
+        if (user == null && userApiKey.getUserId() > 0) {
+            user = userService.getUserById(userApiKey.getUserId());
+        }
+        if (user == null || user.getRole() == null) {
+            jwtUser.setStatus(JwtUser.TokenStatus.EXPIRED);
+            return jwtUser;
+        }
+        jwtUser.setStatus(JwtUser.TokenStatus.NORMAL);
+        jwtUser.setUserName(user.getUsername());
+        jwtUser.setPassword(user.getPassword());
+        jwtUser.setRoleId(user.getRole().getId());
+        jwtUser.setUserId(user.getId());
+        log.info("[API KEY] HS256 验签未通过，已按库中启用的 ApiKey 放行, user={}", user.getUsername());
+        return jwtUser;
     }
 }
