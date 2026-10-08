@@ -87,6 +87,18 @@ public abstract class SIPRequestProcessorParent {
 		return responseAck(sipRequest, statusCode, msg, null);
 	}
 
+	/**
+	 * 回复带 Expires 的 SUBSCRIBE 200。供子包使用，避免直接访问包内的 ResponseAckExtraParam。
+	 */
+	protected SIPResponse responseSubscribeOk(SIPRequest request, String xml, int expires) throws SipException, InvalidArgumentException, ParseException {
+		ContentTypeHeader contentTypeHeader = SipFactory.getInstance().createHeaderFactory().createContentTypeHeader("Application", "MANSCDP+xml");
+		ResponseAckExtraParam responseAckExtraParam = new ResponseAckExtraParam();
+		responseAckExtraParam.contentTypeHeader = contentTypeHeader;
+		responseAckExtraParam.content = xml;
+		responseAckExtraParam.expires = expires;
+		return responseAck(request, Response.OK, null, responseAckExtraParam);
+	}
+
 
 	public SIPResponse responseAck(SIPRequest sipRequest, int statusCode, String msg, ResponseAckExtraParam responseAckExtraParam) throws SipException, InvalidArgumentException, ParseException {
 		// 全局防御：校验SIP状态码合法性，防止非法状态码传入JAIN-SIP导致IllegalArgumentException

@@ -176,8 +176,10 @@ public class CommonGBChannel {
                 break;
             case CatalogEvent.ON:
             case CatalogEvent.OFF:
+                // 科达等上级以 Status 更新在线状态，仅有 Event 时不会改离线
                 content = "<Item>\n" +
                         "<DeviceID>" + this.getGbDeviceId() + "</DeviceID>\n" +
+                        "<Status>" + event + "</Status>\n" +
                         "<Event>" + event + "</Event>\r\n" +
                         "</Item>\n";
                 break;

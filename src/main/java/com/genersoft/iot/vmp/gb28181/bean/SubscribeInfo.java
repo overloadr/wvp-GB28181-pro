@@ -49,8 +49,10 @@ public class SubscribeInfo {
         subscribeInfo.transactionInfo = new SipTransactionInfo(response);
 
         subscribeInfo.expires = expires;
-        subscribeInfo.eventId = eventHeader.getEventId();
-        subscribeInfo.eventType = eventHeader.getEventType();
+        if (eventHeader != null) {
+            subscribeInfo.eventId = eventHeader.getEventId();
+            subscribeInfo.eventType = eventHeader.getEventType();
+        }
         return subscribeInfo;
     }
     public static SubscribeInfo buildSimulated(String platFormServerId, String platFormServerIp){
