@@ -169,17 +169,9 @@ public class CommonGBChannel {
             case CatalogEvent.DEL:
             case CatalogEvent.DEFECT:
             case CatalogEvent.VLOST:
-                content = "<Item>\n" +
-                        "<DeviceID>" + this.getGbDeviceId() + "</DeviceID>\n" +
-                        "<Event>" + event + "</Event>\n" +
-                        "</Item>\n";
-                break;
             case CatalogEvent.ON:
             case CatalogEvent.OFF:
-                content = "<Item>\n" +
-                        "<DeviceID>" + this.getGbDeviceId() + "</DeviceID>\n" +
-                        "<Event>" + event + "</Event>\r\n" +
-                        "</Item>\n";
+                content = encodeSlimItem(event);
                 break;
             case CatalogEvent.ADD:
             case CatalogEvent.UPDATE:
@@ -190,6 +182,40 @@ public class CommonGBChannel {
                 break;
         }
         return content;
+    }
+
+    /**
+     * Catalog NOTIFY 精简 Item。国标必选为 DeviceID + Event，
+     * 同时补充 Name、Status，兼容科达/华为等按目录项解析状态的上级平台。
+     */
+    private String encodeSlimItem(String event) {
+        StringBuilder content = new StringBuilder();
+        content.append("<Item>\n")
+                .append("<DeviceID>").append(this.getGbDeviceId()).append("</DeviceID>\n");
+        if (this.getGbName() != null && !this.getGbName().isEmpty()) {
+            content.append("<Name>").append(this.getGbName()).append("</Name>\n");
+        }
+        content.append("<Event>").append(event).append("</Event>\n");
+        String status;
+        switch (event) {
+            case CatalogEvent.ON:
+                status = "ON";
+                break;
+            case CatalogEvent.OFF:
+            case CatalogEvent.DEL:
+            case CatalogEvent.VLOST:
+            case CatalogEvent.DEFECT:
+                status = "OFF";
+                break;
+            default:
+                status = this.getGbStatus();
+                break;
+        }
+        if (status != null && !status.isEmpty()) {
+            content.append("<Status>").append(status).append("</Status>\n");
+        }
+        content.append("</Item>\n");
+        return content.toString();
     }
 
     private String getFullContent(String event, String serverDeviceId) {

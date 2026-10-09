@@ -143,11 +143,11 @@ public class ZLMHttpHookListener {
                 && param.getStream().endsWith(mediaServer.getTranscodeSuffix())  ) {
             return HookResult.SUCCESS();
         }
-        if (param.getSchema().equalsIgnoreCase("rtsp")) {
+        if (shouldPublishStreamChanged(param)) {
             if (param.isRegist()) {
                 log.info("[ZLM HOOK] 流注册, {}->{}->{}/{}", param.getMediaServerId(), param.getSchema(), param.getApp(), param.getStream());
                 String queryParams = param.getParams();
-                if (queryParams == null) {
+                if (queryParams == null && param.getOriginUrl() != null && param.getOriginUrl().length() > 4) {
                     try {
                         URL url = new URL("http" + param.getOriginUrl().substring(4));
                         queryParams = url.getQuery();
@@ -325,5 +325,20 @@ public class ZLMHttpHookListener {
         }
 
         return HookResult.SUCCESS();
+    }
+
+    /**
+     * rtsp 作为通用流注册信令；rtmp 拉流在未开启 rtsp 时也需要发布事件，避免代理拉流无法触发国标 ON/OFF。
+     */
+    private boolean shouldPublishStreamChanged(OnStreamChangedHookParam param) {
+        if (param.getSchema() == null) {
+            return false;
+        }
+        if (param.getSchema().equalsIgnoreCase("rtsp")) {
+            return true;
+        }
+        return param.getSchema().equalsIgnoreCase("rtmp")
+                && (param.getOriginType() == OriginType.PULL.ordinal()
+                || param.getOriginType() == OriginType.FFMPEG_PULL.ordinal());
     }
 }

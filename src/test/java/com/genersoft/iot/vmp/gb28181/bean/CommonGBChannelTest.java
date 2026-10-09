@@ -4,6 +4,7 @@ import com.genersoft.iot.vmp.gb28181.event.subscribe.catalog.CatalogEvent;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CommonGBChannelTest {
 
@@ -30,6 +31,28 @@ class CommonGBChannelTest {
 
         assertEquals(1, count(content, "<RegisterWay>"));
         assertEquals(1, count(content, "<Secrecy>"));
+    }
+
+    @Test
+    void encodeOnOffDelShouldIncludeNameAndStatus() {
+        CommonGBChannel channel = new CommonGBChannel();
+        channel.setGbDeviceId("42010100001320000006");
+        channel.setGbName("proxy-camera");
+
+        String onContent = channel.encode(CatalogEvent.ON, "42010100002000000001");
+        assertTrue(onContent.contains("<Name>proxy-camera</Name>"));
+        assertTrue(onContent.contains("<Event>ON</Event>"));
+        assertTrue(onContent.contains("<Status>ON</Status>"));
+
+        String offContent = channel.encode(CatalogEvent.OFF, "42010100002000000001");
+        assertTrue(offContent.contains("<Name>proxy-camera</Name>"));
+        assertTrue(offContent.contains("<Event>OFF</Event>"));
+        assertTrue(offContent.contains("<Status>OFF</Status>"));
+
+        String delContent = channel.encode(CatalogEvent.DEL, "42010100002000000001");
+        assertTrue(delContent.contains("<Name>proxy-camera</Name>"));
+        assertTrue(delContent.contains("<Event>DEL</Event>"));
+        assertTrue(delContent.contains("<Status>OFF</Status>"));
     }
 
     private static int count(String value, String needle) {

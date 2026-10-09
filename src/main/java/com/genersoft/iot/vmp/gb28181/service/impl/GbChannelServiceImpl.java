@@ -237,6 +237,7 @@ public class GbChannelServiceImpl implements IGbChannelService {
         int result = commonGBChannelMapper.updateStatusById(commonGBChannel.getGbId(), "OFF");
         if (result > 0) {
             try {
+                commonGBChannel.setGbStatus("OFF");
                 // 发送通知
                 eventPublisher.channelEventPublish(commonGBChannel, ChannelEvent.ChannelEventMessageType.OFF);
             } catch (Exception e) {
@@ -282,6 +283,7 @@ public class GbChannelServiceImpl implements IGbChannelService {
         int result = commonGBChannelMapper.updateStatusById(commonGBChannel.getGbId(), "ON");
         if (result > 0) {
             try {
+                commonGBChannel.setGbStatus("ON");
                 // 发送通知
                 eventPublisher.channelEventPublish(commonGBChannel, ChannelEvent.ChannelEventMessageType.ON);
             } catch (Exception e) {

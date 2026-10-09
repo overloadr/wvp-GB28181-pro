@@ -108,10 +108,12 @@ public class PlatformChannelServiceImpl implements IPlatformChannelService {
                                 continue;
                             }
                             log.info("[Catalog事件: {}]平台：{}，影响通道{}", event.getMessageType(), platform.getServerGBId(), serverGbId);
+                            CommonGBChannel originChannel = channelMap.get(serverGbId);
+                            if (originChannel == null) {
+                                continue;
+                            }
                             List<CommonGBChannel> deviceChannelList = new ArrayList<>();
-                            CommonGBChannel deviceChannel = new CommonGBChannel();
-                            deviceChannel.setGbDeviceId(serverGbId);
-                            deviceChannelList.add(deviceChannel);
+                            deviceChannelList.add(originChannel);
                             try {
                                 sipCommanderForPlatform.sendNotifyForCatalogOther(event.getMessageType().name(), platform, deviceChannelList, subscribeInfo, null);
                             } catch (InvalidArgumentException | ParseException | NoSuchFieldException | SipException |

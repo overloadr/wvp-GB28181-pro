@@ -518,7 +518,7 @@ public class SIPCommanderForPlatform implements ISIPCommanderForPlatform {
         }
         log.info("[发送NOTIFY通知]类型： {}，发送数量： {}", type, channels.size());
         Integer finalIndex = index;
-        String catalogXmlContent = getCatalogXmlContentForCatalogOther(parentPlatform, channels, type);
+        String catalogXmlContent = getCatalogXmlContentForCatalogOther(parentPlatform, channels, deviceChannels.size(), type);
         sendNotify(parentPlatform, catalogXmlContent, subscribeInfo, eventResult -> {
             log.error("发送NOTIFY通知消息失败。错误：{} {}", eventResult.statusCode, eventResult.msg);
         }, eventResult -> {
@@ -532,7 +532,7 @@ public class SIPCommanderForPlatform implements ISIPCommanderForPlatform {
         });
     }
 
-    private String getCatalogXmlContentForCatalogOther(Platform platform, List<CommonGBChannel> channels, String type) {
+    private String getCatalogXmlContentForCatalogOther(Platform platform, List<CommonGBChannel> channels, int sumNum, String type) {
 
         String characterSet = platform.getCharacterSet();
         StringBuffer catalogXml = new StringBuffer(600);
@@ -541,8 +541,8 @@ public class SIPCommanderForPlatform implements ISIPCommanderForPlatform {
                 .append("<CmdType>Catalog</CmdType>\r\n")
                 .append("<SN>" + (int) ((Math.random() * 9 + 1) * 100000) + "</SN>\r\n")
                 .append("<DeviceID>" + platform.getDeviceGBId() + "</DeviceID>\r\n")
-                .append("<SumNum>1</SumNum>\r\n")
-                .append("<DeviceList Num=\" " + channels.size() + " \">\r\n");
+                .append("<SumNum>" + sumNum + "</SumNum>\r\n")
+                .append("<DeviceList Num=\"" + channels.size() + "\">\r\n");
         if (!channels.isEmpty()) {
             for (CommonGBChannel channel : channels) {
                catalogXml.append(channel.encode(type, platform.getDeviceGBId()));

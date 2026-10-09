@@ -81,7 +81,7 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
     @Transactional
     @org.springframework.context.event.EventListener
     public void onApplicationEvent(MediaArrivalEvent event) {
-        if ("rtsp".equals(event.getSchema())) {
+        if (isProxyStreamSchema(event.getSchema())) {
             streamChangeHandler(event.getApp(), event.getStream(), event.getMediaServer().getId(), true);
         }
     }
@@ -93,7 +93,7 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
     @EventListener
     @Transactional
     public void onApplicationEvent(MediaDepartureEvent event) {
-        if ("rtsp".equals(event.getSchema())) {
+        if (isProxyStreamSchema(event.getSchema())) {
             streamChangeHandler(event.getApp(), event.getStream(), event.getMediaServer().getId(), false);
         }
     }
@@ -365,6 +365,33 @@ public class StreamProxyServiceImpl implements IStreamProxyService {
         streamProxy.setMediaServerId(mediaServerId);
         streamProxy.setUpdateTime(DateUtil.getNow());
         streamProxyMapper.updateStream(streamProxy);
+        notifyGbChannelStatus(streamProxy, app, stream, status);
+    }
+
+    private void notifyGbChannelStatus(StreamProxy streamProxy, String app, String stream, boolean online) {
+        if (streamProxy.getGbId() <= 0) {
+            return;
+        }
+        CommonGBChannel channel = streamProxy.buildCommonGBChannel();
+        if (channel == null) {
+            return;
+        }
+        String targetStatus = online ? "ON" : "OFF";
+        if (targetStatus.equalsIgnoreCase(streamProxy.getGbStatus())) {
+            return;
+        }
+        streamProxy.setGbStatus(targetStatus);
+        if (online) {
+            log.info("[拉流代理] 通道上线，app：{}，stream: {}，国标编号：{}", app, stream, channel.getGbDeviceId());
+            gbChannelService.online(channel);
+        } else {
+            log.info("[拉流代理] 通道离线，app：{}，stream: {}，国标编号：{}", app, stream, channel.getGbDeviceId());
+            gbChannelService.offline(channel);
+        }
+    }
+
+    private boolean isProxyStreamSchema(String schema) {
+        return "rtsp".equalsIgnoreCase(schema) || "rtmp".equalsIgnoreCase(schema);
     }
 
     @Override
