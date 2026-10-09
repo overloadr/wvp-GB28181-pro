@@ -92,6 +92,9 @@ public class SubscribeRequestProcessor extends SIPRequestProcessorParent impleme
 				if (response != null) {
 					ExpiresHeader expireHeader = getHeaderFactory().createExpiresHeader(30);
 					response.setExpires(expireHeader);
+					Platform platform = platformService.queryPlatformByServerGBId(platformId);
+					response.addHeader(getHeaderFactory().createContactHeader(
+							createContactAddress(createLocalContactSipURI(request, platform))));
 				}
                 log.info("response : {}", response);
 				sipSender.transmitRequest(request.getLocalAddress().getHostAddress(), response);
