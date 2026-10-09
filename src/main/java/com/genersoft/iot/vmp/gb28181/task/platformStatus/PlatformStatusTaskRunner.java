@@ -40,47 +40,41 @@ public class PlatformStatusTaskRunner {
     // 订阅过期检查
     @Scheduled(fixedDelay = 500, timeUnit = TimeUnit.MILLISECONDS)
     public void expirationCheckForRegister(){
-        while (!registerDelayQueue.isEmpty()) {
-            PlatformRegisterTask take = null;
+        PlatformRegisterTask take;
+        while ((take = registerDelayQueue.poll()) != null) {
             try {
-                take = registerDelayQueue.take();
-                try {
-                    removeRegisterTask(take.getPlatformServerId());
-                    take.expired();
-                }catch (Exception e) {
-                    log.error("[平台注册到期] 到期处理时出现异常， 平台上级编号: {} ", take.getPlatformServerId());
-                }
-            } catch (InterruptedException e) {
-                log.error("[平台注册到期] ", e);
+                removeRegisterTask(take.getPlatformServerId());
+                take.expired();
+            }catch (Exception e) {
+                log.error("[平台注册到期] 到期处理时出现异常， 平台上级编号: {} ", take.getPlatformServerId());
             }
         }
     }
     @Scheduled(fixedDelay = 500, timeUnit = TimeUnit.MILLISECONDS)
     public void expirationCheckForKeepalive(){
-        while (!keepaliveTaskDelayQueue.isEmpty()) {
-            PlatformKeepaliveTask take = null;
+        PlatformKeepaliveTask take;
+        while ((take = keepaliveTaskDelayQueue.poll()) != null) {
             try {
-                take = keepaliveTaskDelayQueue.take();
-                try {
-                    removeKeepAliveTask(take.getPlatformServerId());
-                    take.expired();
-                }catch (Exception e) {
-                    log.error("[平台心跳到期] 到期处理时出现异常， 平台上级编号: {} ", take.getPlatformServerId());
-                }
-            } catch (InterruptedException e) {
-                log.error("[平台心跳到期] ", e);
+                removeKeepAliveTask(take.getPlatformServerId());
+                take.expired();
+            }catch (Exception e) {
+                log.error("[平台心跳到期] 到期处理时出现异常， 平台上级编号: {} ", take.getPlatformServerId());
             }
         }
     }
 
     public void addRegisterTask(PlatformRegisterTask task) {
-        Duration duration = Duration.ofSeconds((task.getDelayTime() - System.currentTimeMillis())/1000);
-        if (duration.getSeconds() < 0) {
+        PlatformRegisterTask old = registerSubscribes.remove(task.getPlatformServerId());
+        if (old != null) {
+            registerDelayQueue.remove(old);
+        }
+        long delayMs = task.getDelayTime() - System.currentTimeMillis();
+        if (delayMs < 0) {
             return;
         }
         registerSubscribes.put(task.getPlatformServerId(), task);
         String key = String.format("%s_%s_%s", prefix, userSetting.getServerId(), task.getPlatformServerId());
-        redisTemplate.opsForValue().set(key, task.getInfo(), duration);
+        redisTemplate.opsForValue().set(key, task.getInfo(), Duration.ofMillis(Math.max(delayMs, 1000)));
         registerDelayQueue.offer(task);
     }
 
@@ -117,8 +111,12 @@ public class PlatformStatusTaskRunner {
     }
 
     public void addKeepAliveTask(PlatformKeepaliveTask task) {
-        Duration duration = Duration.ofSeconds((task.getDelayTime() - System.currentTimeMillis())/1000);
-        if (duration.getSeconds() < 0) {
+        PlatformKeepaliveTask old = keepaliveSubscribes.remove(task.getPlatformServerId());
+        if (old != null) {
+            keepaliveTaskDelayQueue.remove(old);
+        }
+        long delayMs = task.getDelayTime() - System.currentTimeMillis();
+        if (delayMs < 0) {
             return;
         }
         keepaliveSubscribes.put(task.getPlatformServerId(), task);

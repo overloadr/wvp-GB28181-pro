@@ -53,7 +53,9 @@ import javax.sip.ResponseEvent;
 import javax.sip.SipException;
 import java.text.ParseException;
 import java.util.List;
+import java.util.Set;
 import java.util.Vector;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -114,6 +116,11 @@ public class PlatformServiceImpl implements IPlatformService {
     @Autowired
     private PlatformStatusTaskRunner statusTaskRunner;
 
+    /**
+     * 正在进行 401/200 注册事务的上级平台，避免丢失检测用新 Call-ID 并发注册。
+     */
+    private final Set<String> registeringPlatforms = ConcurrentHashMap.newKeySet();
+
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady(){
 
@@ -172,29 +179,58 @@ public class PlatformServiceImpl implements IPlatformService {
             return;
         }
         for (Platform platform : platformList) {
-             if (statusTaskRunner.containsRegister(platform.getServerGBId()) && statusTaskRunner.containsKeepAlive(platform.getServerGBId())) {
-                 continue;
-             }
-             if (statusTaskRunner.containsRegister(platform.getServerGBId())) {
-                 SipTransactionInfo transactionInfo = statusTaskRunner.getRegisterTransactionInfo(platform.getServerGBId());
-                 // 注销后出发平台离线， 如果是启用的平台，那么下次丢失检测会检测到并重新注册上线
-                 sendUnRegister(platform, transactionInfo);
-             }else {
-                 statusTaskRunner.removeKeepAliveTask(platform.getServerGBId());
-                 sendRegister(platform, null);
-             }
+            String serverGbId = platform.getServerGBId();
+            if (registeringPlatforms.contains(serverGbId)) {
+                continue;
+            }
+            boolean hasRegister = statusTaskRunner.containsRegister(serverGbId);
+            boolean hasKeepAlive = statusTaskRunner.containsKeepAlive(serverGbId);
+            if (hasRegister && hasKeepAlive) {
+                continue;
+            }
+            if (hasRegister) {
+                // 注册会话还在，只是心跳任务丢失，补建心跳，避免注销后用新 Call-ID 重注册
+                log.info("[国标级联] {}（{}）心跳任务缺失，补建心跳任务", platform.getName(), serverGbId);
+                restoreKeepAliveTask(platform);
+                continue;
+            }
+            if (hasKeepAlive) {
+                // 注册到期续期窗口：心跳仍在说明会话未丢，由 registerExpire 用原 Call-ID 刷新
+                continue;
+            }
+            log.info("[国标级联] {}（{}）未检测到注册会话，发起注册", platform.getName(), serverGbId);
+            sendRegister(platform, null);
         }
     }
 
     private void sendRegister(Platform platform, SipTransactionInfo sipTransactionInfo) {
+        if (!registeringPlatforms.add(platform.getServerGBId())) {
+            log.info("[国标级联] {}（{}）注册进行中，忽略重复注册", platform.getName(), platform.getServerGBId());
+            return;
+        }
         try {
             commanderForPlatform.register(platform, sipTransactionInfo, eventResult -> {
+                registeringPlatforms.remove(platform.getServerGBId());
+                if (statusTaskRunner.containsRegister(platform.getServerGBId())) {
+                    log.info("[国标级联] {}（{}）注册超时或失败，但平台已上线，忽略", platform.getName(), platform.getServerGBId());
+                    return;
+                }
                 log.info("[国标级联] {}（{}）,注册失败", platform.getName(), platform.getServerGBId());
                 offline(platform);
             }, null);
         } catch (InvalidArgumentException | ParseException | SipException e) {
+            registeringPlatforms.remove(platform.getServerGBId());
             log.error("[命令发送失败] 国标级联: {}", e.getMessage());
         }
+    }
+
+    private void restoreKeepAliveTask(Platform platform) {
+        if (statusTaskRunner.containsKeepAlive(platform.getServerGBId())) {
+            return;
+        }
+        PlatformKeepaliveTask keepaliveTask = new PlatformKeepaliveTask(platform.getServerGBId(),
+                platform.getKeepTimeout() * 1000L, this::keepaliveExpire);
+        statusTaskRunner.addKeepAliveTask(keepaliveTask);
     }
 
     private void sendUnRegister(Platform platform, SipTransactionInfo sipTransactionInfo) {
@@ -411,6 +447,9 @@ public class PlatformServiceImpl implements IPlatformService {
     @Override
     public void online(Platform platform, SipTransactionInfo sipTransactionInfo) {
         log.info("[国标级联]：{}, 平台上线", platform.getServerGBId());
+        registeringPlatforms.remove(platform.getServerGBId());
+        statusTaskRunner.removeRegisterTask(platform.getServerGBId());
+        statusTaskRunner.removeKeepAliveTask(platform.getServerGBId());
         PlatformRegisterTask registerTask = new PlatformRegisterTask(platform.getServerGBId(), platform.getExpires() * 1000L - 500L,
                 sipTransactionInfo, (platformServerGbId) -> {
             this.registerExpire(platformServerGbId, sipTransactionInfo);
@@ -433,6 +472,28 @@ public class PlatformServiceImpl implements IPlatformService {
                 subscribeHolder.removeCatalogSubscribe(platform.getServerGBId());
             }
         }
+    }
+
+    @Override
+    public boolean isRegistering(String platformServerGbId) {
+        return platformServerGbId != null && registeringPlatforms.contains(platformServerGbId);
+    }
+
+    @Override
+    public Platform queryRegisteringPlatformByDeviceGbId(String deviceGbId) {
+        if (deviceGbId == null || registeringPlatforms.isEmpty()) {
+            return null;
+        }
+        List<Platform> platformList = platformMapper.queryServerIdsWithEnableAndServer(userSetting.getServerId());
+        if (platformList == null || platformList.isEmpty()) {
+            return null;
+        }
+        for (Platform platform : platformList) {
+            if (deviceGbId.equals(platform.getDeviceGBId()) && registeringPlatforms.contains(platform.getServerGBId())) {
+                return platform;
+            }
+        }
+        return null;
     }
 
     /**
@@ -503,6 +564,7 @@ public class PlatformServiceImpl implements IPlatformService {
     @Override
     public void offline(Platform platform) {
         log.info("[平台离线]：{}({})", platform.getName(), platform.getServerGBId());
+        registeringPlatforms.remove(platform.getServerGBId());
         statusTaskRunner.removeRegisterTask(platform.getServerGBId());
         statusTaskRunner.removeKeepAliveTask(platform.getServerGBId());
 

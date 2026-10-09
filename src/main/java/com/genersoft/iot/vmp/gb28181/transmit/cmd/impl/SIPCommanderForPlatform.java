@@ -115,7 +115,8 @@ public class SIPCommanderForPlatform implements ISIPCommanderForPlatform {
                 if (sipTransactionInfo.getFromTag() != null) {
                     fromTag = sipTransactionInfo.getFromTag();
                 }
-                if (sipTransactionInfo.getToTag() != null) {
+                // 401 鉴权重试不带 To-tag；到期续期才复用上次 200 的 To-tag
+                if (www == null && sipTransactionInfo.getToTag() != null) {
                     toTag = sipTransactionInfo.getToTag();
                 }
             }
@@ -135,7 +136,7 @@ public class SIPCommanderForPlatform implements ISIPCommanderForPlatform {
                 if (errorEvent != null ) {
                     errorEvent.response(event);
                 }
-            }, okEvent, 2000L);
+            }, okEvent, 15000L);
     }
 
     @Override

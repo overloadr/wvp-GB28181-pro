@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 import javax.sip.InvalidArgumentException;
 import javax.sip.ResponseEvent;
 import javax.sip.SipException;
+import javax.sip.header.FromHeader;
 import javax.sip.header.WWWAuthenticateHeader;
 import javax.sip.message.Response;
 import java.text.ParseException;
@@ -65,6 +66,9 @@ public class RegisterResponseProcessor extends SIPResponseProcessorAbstract {
 		long seqNumber = response.getCSeqHeader().getSeqNumber();
 		SipEvent subscribe = sipSubscribe.getSubscribe(callId + seqNumber);
 		if (subscribe == null || subscribe.getSipTransactionInfo() == null || subscribe.getSipTransactionInfo().getUser() == null) {
+			if (response.getStatusCode() == Response.OK) {
+				handleOkWithoutSubscribe(response);
+			}
 			return;
 		}
 
@@ -93,6 +97,24 @@ public class RegisterResponseProcessor extends SIPResponseProcessorAbstract {
 			}else {
 				platformService.offline(platform);
 			}
+		}
+	}
+
+	private void handleOkWithoutSubscribe(SIPResponse response) {
+		try {
+			FromHeader fromHeader = response.getFromHeader();
+			if (fromHeader == null || fromHeader.getAddress() == null || fromHeader.getAddress().getURI() == null) {
+				return;
+			}
+			javax.sip.address.SipURI sipURI = (javax.sip.address.SipURI) fromHeader.getAddress().getURI();
+			Platform platform = platformService.queryRegisteringPlatformByDeviceGbId(sipURI.getUser());
+			if (platform == null) {
+				return;
+			}
+			log.info("[国标级联]注册 200响应(补救上线) {}", platform.getServerGBId());
+			platformService.online(platform, new SipTransactionInfo(response));
+		} catch (Exception e) {
+			log.warn("[国标级联]注册 200响应补救上线失败: {}", e.getMessage());
 		}
 	}
 }

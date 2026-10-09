@@ -49,6 +49,16 @@ public interface IPlatformService {
     void online(Platform parentPlatform, SipTransactionInfo sipTransactionInfo);
 
     /**
+     * 当前是否正在向上级发送注册（含 401 鉴权过程）
+     */
+    boolean isRegistering(String platformServerGbId);
+
+    /**
+     * 按本平台国标编号查找正在注册的上级平台
+     */
+    Platform queryRegisteringPlatformByDeviceGbId(String deviceGbId);
+
+    /**
      * 平台离线
      * @param parentPlatform 平台信息
      */
