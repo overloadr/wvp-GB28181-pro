@@ -200,6 +200,12 @@ public class SubscribeRequestProcessor extends SIPRequestProcessorParent impleme
 			}else {
 				subscribeInfo.setTransactionInfo(new SipTransactionInfo(response));
 				subscribeHolder.putCatalogSubscribe(platformId, subscribeInfo);
+				// RFC 3265 / GB28181 附录P：初始(及刷新)订阅 200 后立即 NOTIFY，激活上级订阅任务
+				try {
+					platformService.sendNotifyForCatalogSubscribe(parentPlatform, subscribeInfo);
+				} catch (Exception e) {
+					log.error("[目录订阅] 发送激活NOTIFY失败: {}", e.getMessage(), e);
+				}
 			}
 		} catch (SipException | InvalidArgumentException | ParseException e) {
 			log.error("未处理的异常 ", e);

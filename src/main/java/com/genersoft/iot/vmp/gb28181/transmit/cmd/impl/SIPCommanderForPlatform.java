@@ -8,6 +8,7 @@ import com.genersoft.iot.vmp.conf.exception.SsrcTransactionNotFoundException;
 import com.genersoft.iot.vmp.gb28181.SipLayer;
 import com.genersoft.iot.vmp.gb28181.bean.*;
 import com.genersoft.iot.vmp.gb28181.event.SipSubscribe;
+import com.genersoft.iot.vmp.gb28181.event.subscribe.catalog.CatalogEvent;
 import com.genersoft.iot.vmp.gb28181.session.SipInviteSessionManager;
 import com.genersoft.iot.vmp.gb28181.transmit.SIPSender;
 import com.genersoft.iot.vmp.gb28181.transmit.cmd.ISIPCommanderForPlatform;
@@ -553,6 +554,26 @@ public class SIPCommanderForPlatform implements ISIPCommanderForPlatform {
                 .append("</Notify>\r\n");
         return catalogXml.toString();
     }
+
+    @Override
+    public void sendNotifyForCatalogSubscribe(Platform parentPlatform, List<CommonGBChannel> deviceChannels,
+                                              SubscribeInfo subscribeInfo) throws InvalidArgumentException, ParseException,
+            NoSuchFieldException, SipException, IllegalAccessException {
+        if (parentPlatform == null || subscribeInfo == null) {
+            log.warn("[目录订阅激活NOTIFY] 缺少必要参数");
+            return;
+        }
+        if (deviceChannels == null || deviceChannels.isEmpty()) {
+            String catalogXmlContent = getCatalogXmlContentForCatalogOther(parentPlatform, Collections.emptyList(), 0, CatalogEvent.OFF);
+            log.info("[发送NOTIFY通知]类型：目录订阅激活，平台：{}，SumNum=0", parentPlatform.getServerGBId());
+            sendNotify(parentPlatform, catalogXmlContent, subscribeInfo, eventResult -> {
+                log.error("发送NOTIFY通知消息失败。错误：{} {}", eventResult.statusCode, eventResult.msg);
+            }, null);
+            return;
+        }
+        sendNotifyForCatalogOther(CatalogEvent.OFF, parentPlatform, deviceChannels, subscribeInfo, null);
+    }
+
     @Override
     public void recordInfo(CommonGBChannel deviceChannel, Platform parentPlatform, String fromTag, RecordInfo recordInfo) throws SipException, InvalidArgumentException, ParseException {
         if ( parentPlatform ==null) {

@@ -3,6 +3,7 @@ package com.genersoft.iot.vmp.gb28181.service;
 import com.genersoft.iot.vmp.gb28181.bean.CommonGBChannel;
 import com.genersoft.iot.vmp.gb28181.bean.Platform;
 import com.genersoft.iot.vmp.gb28181.bean.SipTransactionInfo;
+import com.genersoft.iot.vmp.gb28181.bean.SubscribeInfo;
 import com.genersoft.iot.vmp.gb28181.event.SipSubscribe;
 import com.genersoft.iot.vmp.media.bean.MediaServer;
 import com.genersoft.iot.vmp.media.event.hook.HookSubscribe;
@@ -69,6 +70,11 @@ public interface IPlatformService {
      * @param platformId 平台
      */
     void sendNotifyMobilePosition(String platformId);
+
+    /**
+     * RFC 3265 / GB28181 附录P：目录订阅成功后立即发送 Catalog NOTIFY，激活上级订阅任务。
+     */
+    void sendNotifyForCatalogSubscribe(Platform platform, SubscribeInfo subscribeInfo);
 
     /**
      * 向上级发送语音喊话的消息

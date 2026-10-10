@@ -10,6 +10,7 @@ import com.genersoft.iot.vmp.gb28181.bean.*;
 import com.genersoft.iot.vmp.gb28181.dao.PlatformChannelMapper;
 import com.genersoft.iot.vmp.gb28181.dao.PlatformMapper;
 import com.genersoft.iot.vmp.gb28181.event.SipSubscribe;
+import com.genersoft.iot.vmp.gb28181.event.subscribe.catalog.CatalogEvent;
 import com.genersoft.iot.vmp.gb28181.service.IGbChannelService;
 import com.genersoft.iot.vmp.gb28181.service.IInviteStreamService;
 import com.genersoft.iot.vmp.gb28181.service.IPlatformService;
@@ -52,6 +53,7 @@ import javax.sip.InvalidArgumentException;
 import javax.sip.ResponseEvent;
 import javax.sip.SipException;
 import java.text.ParseException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.Vector;
@@ -587,6 +589,40 @@ public class PlatformServiceImpl implements IPlatformService {
                 mediaServerService.stopSendRtp(mediaInfo, sendRtpItem.getApp(), sendRtpItem.getStream(), null);
             }
         }
+    }
+
+    @Override
+    public void sendNotifyForCatalogSubscribe(Platform platform, SubscribeInfo subscribeInfo) {
+        if (platform == null || subscribeInfo == null) {
+            return;
+        }
+        List<CommonGBChannel> abnormalChannels = new ArrayList<>();
+        List<CommonGBChannel> channelList = platformChannelMapper.queryShare(platform.getId(), null);
+        if (channelList != null) {
+            for (CommonGBChannel channel : channelList) {
+                if (isOfflineOrAbnormal(channel)) {
+                    abnormalChannels.add(channel);
+                }
+            }
+        }
+        log.info("[目录订阅激活NOTIFY] 平台：{}，离线/异常通道数：{}", platform.getServerGBId(), abnormalChannels.size());
+        try {
+            commanderForPlatform.sendNotifyForCatalogSubscribe(platform, abnormalChannels, subscribeInfo);
+        } catch (InvalidArgumentException | ParseException | NoSuchFieldException | SipException |
+                 IllegalAccessException e) {
+            log.error("[命令发送失败] 国标级联 目录订阅激活NOTIFY: {}", e.getMessage());
+        }
+    }
+
+    private boolean isOfflineOrAbnormal(CommonGBChannel channel) {
+        if (channel == null || channel.getGbStatus() == null) {
+            return false;
+        }
+        String status = channel.getGbStatus().trim();
+        return CatalogEvent.OFF.equalsIgnoreCase(status)
+                || CatalogEvent.VLOST.equalsIgnoreCase(status)
+                || CatalogEvent.DEFECT.equalsIgnoreCase(status)
+                || "OFFLINE".equalsIgnoreCase(status);
     }
 
     @Override

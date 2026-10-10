@@ -122,6 +122,14 @@ public interface ISIPCommanderForPlatform {
             ParseException, NoSuchFieldException, SipException, IllegalAccessException;
 
     /**
+     * RFC 3265 / GB28181 附录P：目录订阅 200 后立即发送 Catalog NOTIFY 以激活上级订阅。
+     * deviceChannels 为当前离线/异常通道，空列表仍发送 SumNum=0 的 NOTIFY。
+     */
+    void sendNotifyForCatalogSubscribe(Platform parentPlatform, List<CommonGBChannel> deviceChannels,
+                                       SubscribeInfo subscribeInfo) throws InvalidArgumentException, ParseException,
+            NoSuchFieldException, SipException, IllegalAccessException;
+
+    /**
      * 回复recordInfo
      *
      * @param deviceChannel  通道信息
